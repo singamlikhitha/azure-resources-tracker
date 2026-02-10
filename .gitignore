@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+.env
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application
+*.db
+*.sqlite
+*.log
+logs/
+*.pem
+*.key
+service_account.json
+
+# Build
+build/
+dist-ssr/
