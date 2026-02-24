@@ -25,6 +25,7 @@ logs/
 *.pem
 *.key
 service_account.json
+config.json
 
 # Build
 build/

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { resourcesApi, CreateResourceRequest } from '@/services/api'
 import { Loader2, CheckCircle, XCircle } from 'lucide-react'
@@ -10,14 +10,57 @@ export function CreateResourcePage() {
 
   const [formData, setFormData] = useState<CreateResourceRequest>({
     user_name: '',
+    cloud_platform: 'Azure',
+    resource_type: 'Resource Group',
     resource_group_name: '',
     project_name: '',
     location: 'eastus',
-    create_github_repo: true,
+    subscription_id: '',
+    create_github_repo: false,
     tags: {},
   })
 
   const [customTags, setCustomTags] = useState('')
+
+  // Fetch cloud platforms
+  const { data: cloudPlatforms, isLoading: platformsLoading } = useQuery({
+    queryKey: ['cloudPlatforms'],
+    queryFn: resourcesApi.listCloudPlatforms,
+  })
+
+  // Fetch resource types based on selected platform
+  const { data: resourceTypes, isLoading: resourceTypesLoading } = useQuery({
+    queryKey: ['resourceTypes', formData.cloud_platform],
+    queryFn: () => resourcesApi.listResourceTypes(formData.cloud_platform),
+    enabled: !!formData.cloud_platform,
+  })
+
+  // Fetch subscriptions (only for Azure)
+  const { data: subscriptions, isLoading: subscriptionsLoading } = useQuery({
+    queryKey: ['subscriptions'],
+    queryFn: resourcesApi.listSubscriptions,
+    enabled: formData.cloud_platform === 'Azure',
+  })
+
+  // Set default subscription when loaded (Azure only)
+  useEffect(() => {
+    if (formData.cloud_platform === 'Azure' && subscriptions && subscriptions.length > 0 && !formData.subscription_id) {
+      setFormData(prev => ({
+        ...prev,
+        subscription_id: subscriptions[0].subscription_id
+      }))
+    }
+  }, [subscriptions, formData.cloud_platform])
+
+  // Update resource type when platform changes
+  useEffect(() => {
+    if (resourceTypes && resourceTypes.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        resource_type: resourceTypes[0].value
+      }))
+    }
+  }, [resourceTypes])
 
   const mutation = useMutation({
     mutationFn: resourcesApi.createResources,
@@ -58,9 +101,9 @@ export function CreateResourcePage() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Create Resources</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Create Cloud Resources</h1>
         <p className="text-gray-600 mt-1">
-          Create a new Azure Resource Group and GitHub repository
+          Create resources across Azure, GCP, or AWS with optional GitHub repository
         </p>
       </div>
 
@@ -121,7 +164,69 @@ export function CreateResourcePage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Resource Group Name *
+                Cloud Platform *
+              </label>
+              {platformsLoading ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading platforms...</span>
+                </div>
+              ) : cloudPlatforms && cloudPlatforms.length > 0 ? (
+                <select
+                  name="cloud_platform"
+                  value={formData.cloud_platform}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {cloudPlatforms.map((platform) => (
+                    <option key={platform.value} value={platform.value}>
+                      {platform.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-red-600">No platforms available</p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Select the cloud platform where you want to create resources
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Resource Type *
+              </label>
+              {resourceTypesLoading ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading resource types...</span>
+                </div>
+              ) : resourceTypes && resourceTypes.length > 0 ? (
+                <select
+                  name="resource_type"
+                  value={formData.resource_type}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {resourceTypes.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-red-600">No resource types available</p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Type of resource to create in {formData.cloud_platform}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Resource Name *
               </label>
               <input
                 type="text"
@@ -130,10 +235,16 @@ export function CreateResourcePage() {
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="rg-myproject-dev"
+                placeholder={
+                  formData.cloud_platform === 'Azure' ? 'rg-myproject-dev' :
+                  formData.cloud_platform === 'GCP' ? 'my-project-123' :
+                  'my-aws-account'
+                }
               />
               <p className="text-xs text-gray-500 mt-1">
-                Alphanumerics, underscores, hyphens, periods allowed (1-90 chars)
+                {formData.cloud_platform === 'Azure' && 'Alphanumerics, underscores, hyphens, periods allowed (1-90 chars)'}
+                {formData.cloud_platform === 'GCP' && 'Lowercase letters, numbers, hyphens (6-30 chars, must start with letter)'}
+                {formData.cloud_platform === 'AWS' && 'Account name for identification'}
               </p>
             </div>
 
@@ -152,24 +263,59 @@ export function CreateResourcePage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Azure Location
-              </label>
-              <select
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="eastus">East US</option>
-                <option value="westus">West US</option>
-                <option value="centralus">Central US</option>
-                <option value="northeurope">North Europe</option>
-                <option value="westeurope">West Europe</option>
-                <option value="southeastasia">Southeast Asia</option>
-              </select>
-            </div>
+            {formData.cloud_platform === 'Azure' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Azure Subscription *
+                  </label>
+                  {subscriptionsLoading ? (
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Loading subscriptions...</span>
+                    </div>
+                  ) : subscriptions && subscriptions.length > 0 ? (
+                    <select
+                      name="subscription_id"
+                      value={formData.subscription_id}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {subscriptions.map((sub) => (
+                        <option key={sub.subscription_id} value={sub.subscription_id}>
+                          {sub.display_name} ({sub.state})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-sm text-red-600">No subscriptions available</p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select the Azure subscription where the resource group will be created
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Azure Location
+                  </label>
+                  <select
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="eastus">East US</option>
+                    <option value="westus">West US</option>
+                    <option value="centralus">Central US</option>
+                    <option value="northeurope">North Europe</option>
+                    <option value="westeurope">West Europe</option>
+                    <option value="southeastasia">Southeast Asia</option>
+                  </select>
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -196,7 +342,7 @@ export function CreateResourcePage() {
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               <label className="ml-2 text-sm text-gray-700">
-                Create GitHub Repository
+                Create GitHub Repository (Optional)
               </label>
             </div>
 

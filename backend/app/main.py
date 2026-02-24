@@ -45,7 +45,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(webhook.router, prefix="/api/webhook", tags=["Webhook"])
-app.include_router(resources.router, prefix="/api/resources", tags=["Resources"])
+app.include_router(resources.router, prefix="/api", tags=["Resources"])
 
 
 @app.get("/")

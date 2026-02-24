@@ -33,14 +33,15 @@ class Settings(BaseSettings):
     GITHUB_AUTO_INIT: bool = True
     GITHUB_PRIVATE: bool = False
     
-    # SharePoint Configuration
-    SHAREPOINT_SITE_URL: str
+    # SharePoint Configuration (Optional)
+    SHAREPOINT_SITE_URL: str = ""
     SHAREPOINT_LIST_NAME: str = "ResourceRequests"
-    SHAREPOINT_CLIENT_ID: str
-    SHAREPOINT_CLIENT_SECRET: str
+    SHAREPOINT_CLIENT_ID: str = ""
+    SHAREPOINT_CLIENT_SECRET: str = ""
+    SHAREPOINT_ENABLED: bool = False
     
-    # Webhook Configuration
-    WEBHOOK_SECRET: str
+    # Webhook Configuration (Optional)
+    WEBHOOK_SECRET: str = "default-webhook-secret"
     WEBHOOK_VALIDATION_TIMEOUT: int = 5
     
     # Database (Optional - for tracking)

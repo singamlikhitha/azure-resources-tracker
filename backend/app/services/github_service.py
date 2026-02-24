@@ -18,7 +18,17 @@ class GitHubService:
     def __init__(self):
         """Initialize GitHub service with token"""
         self.client = Github(settings.GITHUB_TOKEN)
-        self.org = self.client.get_organization(settings.GITHUB_ORG)
+        
+        # Try to get as organization first, fallback to user
+        try:
+            self.owner = self.client.get_organization(settings.GITHUB_ORG)
+            self.is_org = True
+            logger.info("github_initialized_as_org", org=settings.GITHUB_ORG)
+        except GithubException:
+            # For personal accounts, use authenticated user
+            self.owner = self.client.get_user()
+            self.is_org = False
+            logger.info("github_initialized_as_user", user=self.owner.login)
     
     async def create_repository(
         self,
@@ -49,12 +59,12 @@ class GitHubService:
             logger.info(
                 "creating_github_repository",
                 name=repo_name,
-                org=settings.GITHUB_ORG,
+                owner=settings.GITHUB_ORG,
                 private=private
             )
             
-            # Create repository in organization
-            repo = self.org.create_repo(
+            # Create repository (works for both org and user)
+            repo = self.owner.create_repo(
                 name=repo_name,
                 description=description or f"Repository for {repo_name}",
                 private=private,
@@ -98,7 +108,7 @@ class GitHubService:
             GitHubRepository model or None if not found
         """
         try:
-            repo = self.org.get_repo(repo_name)
+            repo = self.owner.get_repo(repo_name)
             
             return GitHubRepository(
                 id=repo.id,
@@ -130,7 +140,7 @@ class GitHubService:
         try:
             logger.info("deleting_github_repository", name=repo_name)
             
-            repo = self.org.get_repo(repo_name)
+            repo = self.owner.get_repo(repo_name)
             repo.delete()
             
             logger.info("github_repository_deleted", name=repo_name)
@@ -162,7 +172,7 @@ class GitHubService:
             True if added successfully
         """
         try:
-            repo = self.org.get_repo(repo_name)
+            repo = self.owner.get_repo(repo_name)
             user = self.client.get_user(username)
             
             repo.add_to_collaborators(user, permission=permission)

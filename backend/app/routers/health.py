@@ -44,19 +44,22 @@ async def health_check():
         logger.error("github_health_check_failed", error=str(e))
         services_status["github"] = "unhealthy"
     
-    # Check SharePoint connectivity
-    try:
-        from app.services.sharepoint_service import SharePointService
-        sharepoint_service = SharePointService()
-        # Test connection
-        services_status["sharepoint"] = "healthy"
-    except Exception as e:
-        logger.error("sharepoint_health_check_failed", error=str(e))
-        services_status["sharepoint"] = "unhealthy"
+    # Check SharePoint connectivity (only if enabled)
+    if settings.SHAREPOINT_ENABLED and settings.SHAREPOINT_SITE_URL:
+        try:
+            from app.services.sharepoint_service import SharePointService
+            sharepoint_service = SharePointService()
+            # Test connection
+            services_status["sharepoint"] = "healthy"
+        except Exception as e:
+            logger.error("sharepoint_health_check_failed", error=str(e))
+            services_status["sharepoint"] = "unhealthy"
+    else:
+        services_status["sharepoint"] = "disabled"
     
     # Overall status
     overall_status = "healthy" if all(
-        status == "healthy" for status in services_status.values()
+        status in ["healthy", "disabled"] for status in services_status.values()
     ) else "degraded"
     
     return HealthResponse(

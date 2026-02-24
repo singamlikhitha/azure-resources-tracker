@@ -2,10 +2,10 @@
 Azure Resource Management Service
 """
 from azure.identity import ClientSecretCredential
-from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.core.exceptions import AzureError
 import structlog
-from typing import Optional
+from typing import Optional, List
 
 from app.config import get_settings
 from app.models import AzureResourceGroup
@@ -29,12 +29,42 @@ class AzureService:
             credential=self.credential,
             subscription_id=settings.AZURE_SUBSCRIPTION_ID
         )
+        
+        self.subscription_client = SubscriptionClient(
+            credential=self.credential
+        )
+    
+    async def list_subscriptions(self) -> List[dict]:
+        """
+        List all Azure subscriptions accessible by the service principal
+        
+        Returns:
+            List of subscription dictionaries with id, name, and state
+        """
+        try:
+            logger.info("listing_subscriptions")
+            subscriptions = []
+            
+            for sub in self.subscription_client.subscriptions.list():
+                subscriptions.append({
+                    "subscription_id": sub.subscription_id,
+                    "display_name": sub.display_name,
+                    "state": sub.state
+                })
+            
+            logger.info("subscriptions_listed", count=len(subscriptions))
+            return subscriptions
+            
+        except AzureError as e:
+            logger.error("list_subscriptions_failed", error=str(e))
+            raise
     
     async def create_resource_group(
         self,
         resource_group_name: str,
         location: Optional[str] = None,
-        tags: Optional[dict] = None
+        tags: Optional[dict] = None,
+        subscription_id: Optional[str] = None
     ) -> AzureResourceGroup:
         """
         Create an Azure Resource Group
@@ -43,6 +73,7 @@ class AzureService:
             resource_group_name: Name of the resource group
             location: Azure region (defaults to settings)
             tags: Additional tags (merged with default tags)
+            subscription_id: Azure subscription ID (defaults to settings)
             
         Returns:
             AzureResourceGroup model
@@ -52,6 +83,16 @@ class AzureService:
         """
         try:
             location = location or settings.AZURE_DEFAULT_LOCATION
+            sub_id = subscription_id or settings.AZURE_SUBSCRIPTION_ID
+            
+            # Create resource client for specific subscription if different
+            if subscription_id and subscription_id != settings.AZURE_SUBSCRIPTION_ID:
+                resource_client = ResourceManagementClient(
+                    credential=self.credential,
+                    subscription_id=subscription_id
+                )
+            else:
+                resource_client = self.resource_client
             
             # Merge tags with defaults
             merged_tags = {**settings.AZURE_DEFAULT_TAGS}
@@ -62,11 +103,12 @@ class AzureService:
                 "creating_resource_group",
                 name=resource_group_name,
                 location=location,
+                subscription_id=sub_id,
                 tags=merged_tags
             )
             
             # Create resource group
-            rg_result = self.resource_client.resource_groups.create_or_update(
+            rg_result = resource_client.resource_groups.create_or_update(
                 resource_group_name,
                 {
                     "location": location,
@@ -156,25 +198,59 @@ class AzureService:
     
     async def list_resource_groups(self) -> list[AzureResourceGroup]:
         """
-        List all resource groups in the subscription
+        List all resource groups across all subscriptions
         
         Returns:
-            List of AzureResourceGroup models
+            List of AzureResourceGroup models from all subscriptions
         """
         try:
             resource_groups = []
             
-            for rg in self.resource_client.resource_groups.list():
-                resource_groups.append(
-                    AzureResourceGroup(
-                        id=rg.id,
-                        name=rg.name,
-                        location=rg.location,
-                        tags=rg.tags or {},
-                        provisioning_state=rg.properties.provisioning_state
-                    )
-                )
+            # Get all subscriptions
+            subscriptions = self.subscription_client.subscriptions.list()
             
+            for sub in subscriptions:
+                # Skip disabled subscriptions
+                if sub.state.lower() != 'enabled':
+                    continue
+                
+                try:
+                    # Create resource client for this subscription
+                    sub_resource_client = ResourceManagementClient(
+                        credential=self.credential,
+                        subscription_id=sub.subscription_id
+                    )
+                    
+                    # List resource groups in this subscription
+                    for rg in sub_resource_client.resource_groups.list():
+                        resource_groups.append(
+                            AzureResourceGroup(
+                                id=rg.id,
+                                name=rg.name,
+                                location=rg.location,
+                                tags=rg.tags or {},
+                                provisioning_state=rg.properties.provisioning_state
+                            )
+                        )
+                    
+                    logger.info(
+                        "listed_resource_groups_for_subscription",
+                        subscription_id=sub.subscription_id,
+                        subscription_name=sub.display_name,
+                        count=len([rg for rg in resource_groups if sub.subscription_id in rg.id])
+                    )
+                    
+                except AzureError as e:
+                    logger.warning(
+                        "failed_to_list_resource_groups_for_subscription",
+                        subscription_id=sub.subscription_id,
+                        subscription_name=sub.display_name,
+                        error=str(e)
+                    )
+                    # Continue with other subscriptions even if one fails
+                    continue
+            
+            logger.info("list_resource_groups_completed", total_count=len(resource_groups))
             return resource_groups
             
         except AzureError as e:

@@ -90,7 +90,7 @@ class SharePointService:
         self,
         item_id: str,
         status: ResourceStatus,
-        azure_rg_id: Optional[str] = None,
+        resource_id: Optional[str] = None,
         github_repo_url: Optional[str] = None,
         error_message: Optional[str] = None
     ) -> bool:
@@ -100,7 +100,7 @@ class SharePointService:
         Args:
             item_id: SharePoint list item ID
             status: New status
-            azure_rg_id: Azure resource group ID (optional)
+            resource_id: Cloud resource ID (optional)
             github_repo_url: GitHub repository URL (optional)
             error_message: Error message if failed (optional)
             
@@ -115,8 +115,10 @@ class SharePointService:
                 "Status": status.value
             }
             
-            if azure_rg_id:
-                update_data["AzureResourceGroupId"] = azure_rg_id
+            if resource_id:
+                update_data["ResourceId"] = resource_id
+                # Keep backward compatibility with Azure
+                update_data["AzureResourceGroupId"] = resource_id
             
             if github_repo_url:
                 update_data["GitHubRepoUrl"] = github_repo_url
@@ -157,11 +159,16 @@ class SharePointService:
             item_data = {
                 "Title": entry.project_name,
                 "UserName": entry.user_name,
+                "CloudPlatform": entry.cloud_platform.value,
+                "ResourceType": entry.resource_type.value,
                 "ResourceGroupName": entry.resource_group_name,
                 "ProjectName": entry.project_name,
                 "DateOfCreation": entry.date_of_creation.isoformat(),
                 "Status": entry.status.value
             }
+            
+            if entry.subscription_id:
+                item_data["SubscriptionId"] = entry.subscription_id
             
             item = list_obj.add_item(item_data).execute_query()
             
@@ -184,6 +191,7 @@ class SharePointService:
         Returns:
             SharePointEntry model
         """
+        from app.models import CloudPlatform, ResourceType
         props = item.properties
         
         # Parse datetime
@@ -194,14 +202,29 @@ class SharePointService:
             else datetime.utcnow()
         )
         
+        # Get cloud platform with fallback to Azure for backward compatibility
+        cloud_platform_str = props.get("CloudPlatform", "Azure")
+        cloud_platform = CloudPlatform(cloud_platform_str)
+        
+        # Get resource type with fallback based on platform
+        resource_type_str = props.get("ResourceType")
+        if not resource_type_str:
+            # Fallback to default resource type based on platform
+            resource_type_str = "Resource Group" if cloud_platform == CloudPlatform.AZURE else "Project"
+        resource_type = ResourceType(resource_type_str)
+        
         return SharePointEntry(
             id=str(props.get("ID")),
             user_name=props.get("UserName", ""),
+            cloud_platform=cloud_platform,
+            resource_type=resource_type,
             resource_group_name=props.get("ResourceGroupName", ""),
             project_name=props.get("ProjectName", ""),
             date_of_creation=date_of_creation,
             status=ResourceStatus(props.get("Status", "Pending")),
             azure_resource_group_id=props.get("AzureResourceGroupId"),
+            resource_id=props.get("ResourceId"),
             github_repo_url=props.get("GitHubRepoUrl"),
-            error_message=props.get("ErrorMessage")
+            error_message=props.get("ErrorMessage"),
+            subscription_id=props.get("SubscriptionId")
         )

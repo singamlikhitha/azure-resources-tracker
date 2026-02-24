@@ -34,21 +34,21 @@ export function Dashboard() {
       </div>
 
       {/* Health Status */}
-      {health && (
+      {health && health.services && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ServiceStatus
             name="Azure"
-            status={health.services.azure}
+            status={health.services.azure || 'unknown'}
             icon={Server}
           />
           <ServiceStatus
             name="GitHub"
-            status={health.services.github}
+            status={health.services.github || 'unknown'}
             icon={Github}
           />
           <ServiceStatus
             name="SharePoint"
-            status={health.services.sharepoint}
+            status={health.services.sharepoint || 'unknown'}
             icon={Activity}
           />
         </div>
